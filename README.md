@@ -54,4 +54,29 @@ chmod 755 SubMsgAct.py
 ./SubMsgAct.py  
 确保没有相关报错，daemon正确启动了。  
 
-零零散散折腾了好久，感觉是个不小的工程。  
+### 三、用到的智能设备情况  
+#### 核心的主控，博联RM Pro+  
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E5%8D%9A%E8%81%94%E9%81%A5%E6%8E%A7.jpg?raw=true)  
+#### 小米智能网关  
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E5%B0%8F%E7%B1%B3%E6%99%BA%E8%83%BD%E7%BD%91%E5%85%B3.jpg?raw=true)
+#### 小米智能插座  
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E5%B0%8F%E7%B1%B3%E6%99%BA%E8%83%BD%E6%8F%92%E5%BA%A7.jpg?raw=true)
+#### 小米空调伴侣  
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E5%B0%8F%E7%B1%B3%E7%A9%BA%E8%B0%83%E4%BC%B4%E4%BE%A32.jpg?raw=true)
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E5%B0%8F%E7%B1%B3%E7%A9%BA%E8%B0%83%E4%BC%B4%E4%BE%A3Pro.jpg?raw=true)
+#### 改家里灯的遥控  
+由于家里灯不是智能的，因此把它的单板开关改造下，买个带射频控制的，把它装到灯开关面板里面，刚刚好。
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E6%94%B9%E5%AE%B6%E9%87%8C%E7%81%AF%E7%9A%84%E9%81%A5%E6%8E%A7.jpg?raw=true)
+
+#### 家里的几个带风扇的灯
+这个风扇灯，本身就带遥控，是射频的，因此可以直接让博联去学习它遥控器的射频信号就可以控制它了。
+![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E9%A3%8E%E6%89%87.jpg?raw=true)
+
+PS1: 射频的指令码很短，穿墙能力很不错，博联遥控放楼下客厅，还可以很轻松控制楼上最远处屋子里面的灯。而wifi那个屋子就太弱，必须另外延展进去。
+PS2：这个用习惯了，感觉还是挺方便的。
+#### 一定要把这个自己的公众号放在手机桌面上，特别方便。 
+#### 一定要把这个自己的公众号放在手机桌面上，特别方便。
+#### 一定要把这个自己的公众号放在手机桌面上，特别方便。
+#### 会提升很大的幸福感
+
+##零零散散折腾了好久，感觉是个不小的工程。  
