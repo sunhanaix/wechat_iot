@@ -14,7 +14,7 @@
 把Google_stonehead部分，部署在公网的VPS云主机上，我这里用的google的云主机。  
 在有公网地址的云主机上，安装mosquitto，设置相关的用户名、密码才能访问：  
 vi /etc/mosquitto/mosquitto.conf   
-port 48883  
+port 1883  
 allow_anonymous false  
 password_file /etc/mosquitto/mosquitto.passwd  
 下面生成密码文件：  
