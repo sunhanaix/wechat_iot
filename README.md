@@ -55,6 +55,8 @@ chmod 755 SubMsgAct.py
 确保没有相关报错，daemon正确启动了。  
 
 ### 三、用到的智能设备情况  
+(由于零零散散近几年陆续购买的东西，有些价格是几年前的，有些当前可能产品已经更新换代了）  
+
 #### 核心的主控，博联RM Pro+  
 ![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E5%8D%9A%E8%81%94%E9%81%A5%E6%8E%A7.jpg?raw=true)  
 #### 小米智能网关  
