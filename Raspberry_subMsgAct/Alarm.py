@@ -1,6 +1,15 @@
 import os,sys,re,json,time
-import MsgAct_config as cfg
 from MyTTS import voice_to_word,word_to_voice,myplay
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
+
 #闹钟的个配置文件格式，参考使用了crontab的文件格式:
 #分钟  小时  日期  月份  周几  闹钟描述
 #但不支持crontab的逗号(,)或者除号（/）模式，如需要多个时间段，需要多个条目进行设置

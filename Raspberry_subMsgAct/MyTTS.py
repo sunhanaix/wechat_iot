@@ -1,6 +1,14 @@
 import os,sys,re,json,random,time
 from aip import AipSpeech  #百度语音识别库，用pip install baidu-aip安装
-import MsgAct_config as cfg
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
 
 APP_ID = cfg.baidu_aip_APP_ID
 API_KEY = cfg.baidu_aip_API_KEY

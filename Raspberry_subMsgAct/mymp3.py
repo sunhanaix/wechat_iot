@@ -1,5 +1,13 @@
 import os,sys,re,json,requests
-import MsgAct_config as cfg
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
 
 #通过模拟http访问控制自己写的那套web歌曲播放系统
 mylogger=cfg.logger
