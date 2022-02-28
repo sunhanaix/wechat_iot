@@ -1,14 +1,15 @@
 import os,sys,re,json,random,logging
 
 debug=False
-voice_dir='voice' #存放语音消息的本地缓存目录
-video_dir='video' #存放视频消息的本地缓存目录
-image_dir='image' #存放图片消息的本地缓存目录
+
 
 broker = 'x.x.x.x' #MQTT服务器地址
 port = 1883
 username='sunbeat' #MQTT用户名
 password='mqtt_password' #MQTT密码
+
+ssh_user='zsan'  #ssh连接公网机的用户名
+ssh_host='x.x.x.x'  #ssh连接公网跳板机，然后反弹端口
 
 mp3_user='sunbeat'  #自己搭的音乐播放web登录的用户名
 mp3_pass='password' #自己搭的音乐播放web登录的密码
@@ -16,7 +17,7 @@ mp3_url='http://localhost/mp3'  #自己搭的音乐播放web地址
 
 accurate=0.4 #获得指令与指令列表匹配度，0-1的置信区间，1为完全匹配；小于此值，认为没有匹配到技能
 deny_stanley='/var/www/html/deny_stanley.py'  #一键禁止小孩手机、pad上网控制脚本路径
-allow_openid=['or_fJ6cvJqrK80PN7MsI8W123456'] #允许执行deny_stanley脚本的openid列表，目前执行其它操作，没有做权限控制
+allow_openid=['or_fJ6cvJqrK80PN7MsI8W123456'] #管理员的openid列表，特定的一些操作需要管理员权限；另外，告警通知会发管理员
 broadlink_cfg=r'/var/www/html/broadlink/MyBroadlink.ini'  #博联遥控器学习好了的射频信号和红外信号配置文件
 mitv_cfg='mitv.ini'  #几个小米电视的操作控制配置文件
 miio_cfg='miio.ini'  #几个小米智能设备控制的配置文件
@@ -27,10 +28,9 @@ baidu_aip_APP_ID='12345678'  #百度语音识别以及文字转语音的id（需
 baidu_aip_API_KEY = 'SvW84112ylD9V3EX12345678'
 baidu_aip_SECRET_KEY = 'DNt5GsVk3lGxBIN5uyBhzH5F12345678'
 
-alarm_cfg='alarm.cfg' #闹钟的配置文件
-audio_dev='hw:0,0' #树莓派下播放音频的设备
-alarm_mp3='alarm.mp3' #闹钟的铃声文件
+xia_tui_api_key='vhyJe0miJGpNjj7zuwf7RRqHp'  #微信关注“虾推啥”公众号，获得的一个访问key。自己的公众号不够用了，都是用测试号测试，但测试号发的信息，被折叠的太多
 
+audio_dev='hw:0,0' #树莓派下播放音频的设备
 
 keywords={
     '打开楼下客厅灯':{'topic':'/iot/broadlink','msg':{'item':'楼下客厅灯','op':'灯'},},
@@ -99,10 +99,19 @@ keywords={
 }
 
 
+#以下部分可以不用修改
 #当前程序运行的绝对路径
 app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 #程序输出的log名字，这里用了"程序名.log"的格式
 log_file = os.path.basename(sys.argv[0]).split('.')[0] + '.log'
+log_file=os.path.join(app_path,log_file)
+
+voice_dir=os.path.join(app_path,'voice') #存放语音消息的本地缓存目录
+video_dir=os.path.join(app_path,'video') #存放视频消息的本地缓存目录
+image_dir=os.path.join(app_path,'image') #存放图片消息的本地缓存目录
+
+alarm_cfg=os.path.join(app_path,'alarm.cfg') #闹钟的配置文件
+alarm_mp3=os.path.join(app_path,'alarm.mp3') #闹钟的铃声文件
 
 #定log输出格式，配置同时输出到标准输出与log文件
 logger = logging.getLogger('mylogger')
