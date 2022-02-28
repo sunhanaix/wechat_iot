@@ -4,8 +4,6 @@
 ## 实现的用法类似如下：
 ![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E7%94%A8%E6%B3%951.jpg?raw=true)
 
-![image](https://github.com/sunhanaix/wechat_iot/blob/main/%E7%94%A8%E6%B3%952.jpg?raw=true)
-
 ## 具体部署方式：
 
 ### 一、公网云端部分
