@@ -2,12 +2,23 @@
 import os,sys,re,json,random
 import time,base64
 import paho.mqtt.client as mqtt
-import stonehead_config as cfg
+import MyDB
 import stonehead_wechat
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
+
 #封装的MQTT类，用于MQTT消息的发布，而订阅部分，专为微信的几个订阅消息进行了定制
 
 VERSION = 'v0.9.0.20220211'
 mylogger=cfg.logger
+
 
 def pack_data(msgType,data=None,openid=None,fname=None):
     '''
@@ -51,9 +62,9 @@ def unpack_data(raw_data): #把前面pack_data编码后的数据，还原回来
     return data
 
 class SubRespone(): #给StoneHead使用的class，订阅/wechat/response这个topic，然后一直loop等待收到消息
-    def __init__(self,broker=cfg.broker,port=cfg.port,user=cfg.username,passwd=cfg.password):
+    def __init__(self,broker=cfg.broker,port=cfg.mqtt_port,user=cfg.username,passwd=cfg.password):
         #client_id = f'mqtt-subscriber-{random.randint(0, 1000)}'
-        client_id = f'mqtt-serv-subReponse'
+        client_id = f'mqtt-serv-subReponse-{cfg.username}'
         self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -64,7 +75,10 @@ class SubRespone(): #给StoneHead使用的class，订阅/wechat/response这个to
         mylogger.info("end loop")
 
     def sub_all(self): #从配置文件config.py中，读取topic主题，并订阅它
-        topics=[f'/{cfg.username}/wechat/response',f'/{cfg.username}/wechat/help']
+        topics=[f'/{cfg.username}/wechat/response',
+                f'/{cfg.username}/wechat/help',
+                f'/{cfg.username}/heartbeat/client',
+                ]
         for topic in topics:
             mylogger.info(f"topic={topic} was subscribed")
             self.client.subscribe(topic=topic, qos=0)
@@ -79,7 +93,6 @@ class SubRespone(): #给StoneHead使用的class，订阅/wechat/response这个to
             mylogger.error(f"error:{e}")
             return
         mylogger.info(f"topic={msg.topic},mid={msg.mid},qos={msg.qos},ret={ret}")
-        mylogger.info(f"data={ret['data']},type:{type(ret['data'])}")
         openid=ret['data']['openid']
         if msg.topic==f'/{cfg.username}/wechat/response': #要是收到树莓派那面publish的执行反馈信息，就把它们扔回给微信用户
             msg = ret['data']['text']
@@ -90,9 +103,18 @@ class SubRespone(): #给StoneHead使用的class，订阅/wechat/response这个to
             content="\n\n".join(keywords)+"\n\n"
             stonehead_wechat.client.send_text_message(openid,content)
             return
+        if msg.topic==f'/{cfg.username}/heartbeat/client': #要是收到了树莓派那面publish的心跳信息
+            ts=ret['data']['ts']
+            #收到心跳信息，就把它记录到日志中，并更新DB中的记录
+            mylogger.info(f"got heartbeat,ts={ts}")
+            kv=MyDB.KeyValueStore(cfg.wechat_db)
+            kv['last_heartbeat']={'server_ts':int(time.time()),'client_ts':int(ts)}
+            kv.close()
+            return
+
 
 class PubMsg(): #用于publish消息到指定topic的类封装
-    def __init__(self, topic, payload, broker=cfg.broker, port=cfg.port, user=cfg.username, passwd=cfg.password):
+    def __init__(self, topic, payload, broker=cfg.broker, port=cfg.mqtt_port, user=cfg.username, passwd=cfg.password):
         client_id = f'mqtt-serv-pub'
         self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self.on_connect

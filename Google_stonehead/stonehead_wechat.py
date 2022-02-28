@@ -6,16 +6,22 @@ from werobot.replies import ArticlesReply, Article,TextReply
 from werobot.utils import cached_property
 import json,sys,os,time,re
 import warnings,logging
-import threading
-import random
+import threading,subprocess
+import random,requests
 import MyDB
 import MyLocation
 import MyMail
 import MyMQTT
-import stonehead_config as cfg
-'''
-微信公众号守护daemon，确保微信公众号指向本daemon服务的web url
-'''
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
+
 VERSION='0.2.2022.02.09'
 mylogger=cfg.logger
 
@@ -26,6 +32,12 @@ EncodingAESKey=cfg.WechatEncodingAESKey
 wechat_db=cfg.wechat_db
 noPrivMsg='请发送“我是xxx，邮箱地址是xxx.xx@xxx.com，申请开通访问此服务号权限”。\n收到验证码进行验证后，方可正常使用。\n请使用help命令查看帮助'
 
+def ts2time(ts=None):
+    if ts:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    else:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    
 class WxRobot(werobot.WeRoBot): #继承werobot.WeRoBot类
 	@cached_property
 	def client(self): #重构client，用编写的类
@@ -35,8 +47,8 @@ class WxClient(werobot.client.Client):
 	def get_access_token(self):
 		"""
 		判断现有的token是否过期。
-		不重构这个方法的话，每次请求时，都会要去获得一次access_token，性能差，容易超微信规定调用阈值，因此需要重构这个方法
-		把token缓存在sqlite的库里面，如果要token时，先查本地库里的，如果没有过期，直接返回缓存的token，如果过期了，现去请求一个
+		不重构这个方法的话，每次请求时，都会要去获得一次access_token，性能差。因此需要重构这个方法
+		把token存储在sqlite的库里面
 		此方法返回值是access_token
 		"""
 		kv=MyDB.KeyValueStore(wechat_db)
@@ -56,6 +68,7 @@ class WxClient(werobot.client.Client):
 		kv['token']=self._token
 		kv['token_expires_at']=self.token_expires_at
 		kv.close()
+		self.exp_date_time=time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(self.token_expires_at))
 		mylogger.info("token=%s,exp_at=%s" % (self._token,self.exp_date_time))
 		return self._token
 
@@ -66,6 +79,30 @@ def wf(fname,ss,*option):
 	with open(fname,option[0]) as f:
 		f.write(ss)
 		f.close			
+
+def get_open_ports_by_netstat(): #调用os下的netstat -antl命令，查看当前哪些端口在使用中
+    pname = 'netstat -antl'
+    result = subprocess.Popen(pname, shell=True, stdout=subprocess.PIPE).stdout
+    lines = result.readlines()
+    ports=set()
+    for line in lines:
+        line=line.decode().lstrip().rstrip()
+        if not line[:3].lower()=='tcp': #只看开头3个字符是tcp的，也就是tcp、tcp4、tcp6都会统计
+            continue
+        try:
+            fields=line.split()
+            port=fields[3].split(':')[-1]
+            ports.add(int(port))
+        except Exception as e:
+            mylogger.error(e)
+    return ports
+
+def get_ava_ssh_port(startPort,endPort): #给定端口范围，在当前os中，找到第一个没有使用的，把这个端口返回，否则返回None
+    ports=get_open_ports_by_netstat()
+    for port in range(startPort,endPort+1):
+        if not port in ports:
+            return port
+
 	
 def msg2uinfo(msg): #给定微信消息的msg object对象，返回userinfo信息
 	openid=msg.FromUserName
@@ -103,6 +140,16 @@ def help(openid):
 	content="目前你可以对它说或者敲入文字：\n\n"
 	MyMQTT.PubMsg(topic=f'/{cfg.username}/wechat/askKeywords',payload=MyMQTT.pack_data(msgType="text",openid=openid,data='keywords'))
 	return content
+	keywords=list(cfg.keywords.keys())
+	content+="\n\n".join(keywords)+"\n\n"
+	content+="==========\n\n"
+	content+="播放歌曲\n\n"
+	content+="随便播放30首歌曲\n\n"
+	content+="广播：图图不要玩游戏啦\n\n"
+	content+="xxxxxx（匹配不到前面的关键字时，此语音会喇叭广播出来）\n\n"
+	content+="\n\n"
+	return content
+
 
 def msgNoPriv(msgObj,client,msg=noPrivMsg):
 	#传入msgObj为微信Message消息对象，
@@ -126,7 +173,7 @@ def deal_subscribe(msgObj,client)	: #处理关注公众号后的操作
 def validCodeOK(uinfo,name,mail):
 	db=MyDB.UserDB(wechat_db)
 	client.remark_user(uinfo['openid'],name)
-	#client.tag_users(uinfo['openid'],[100]); #把用户加入到100号tag的分组里面（“已经注册过用户”）
+	#client.tag_users(uinfo['openid'],[100]); #把用户加入到100号tag的分组里面（“在职员工”）
 	userinfo=client.get_user_info(uinfo['openid'])
 	userinfo['erp_user']=name
 	mylogger.info('userinfo=%s' % json.dumps(userinfo,indent=2,ensure_ascii=False))
@@ -134,7 +181,7 @@ def validCodeOK(uinfo,name,mail):
 	m=MyMail.mail()
 	mail_info={'subject':"%s申请微信服务号权限已经开通" % (name),
 		'body':"%s申请微信服务号权限已经开通，微信昵称：%s，位置：%s" % (name,userinfo['nickname'],userinfo['province']),
-			'to_accounts': [mail]
+			'to_accounts': [mail,cfg.mail_params['fr_account']]  #开通成功的信息，也抄给管理员一份
 			}
 	m.sendmail(mail_info)
 	db.conn.close()
@@ -174,7 +221,7 @@ def unsubscribe(msg):
 	return ''
 
 @robot.location
-def location(msg): #处理用户端发过来的位置消息
+def location(msg): #处理用户端发过来的位置消息，这个是用户端可以选择的位置
 	mylogger.info("location message:%s" % str(vars(msg)))
 	uinfo=msg2uinfo(msg)
 	db=MyDB.UserDB(wechat_db)
@@ -188,7 +235,7 @@ def loc_event(msg): #处理用户端主动上报的位置消息，这个不可�
 	db.logUserOp(uinfo)
 
 @robot.click
-def click_menu(msg):  #处理点击了对应菜单的话，做如何响应
+def click_menu(msg):
 	mylogger.info("click_menu:%s" % str(vars(msg)))
 	db=MyDB.UserDB(wechat_db)
 	uinfo=msg2uinfo(msg)
@@ -287,7 +334,7 @@ def needReg(msg,session):
 	session['mail']=mail
 	m=MyMail.mail()
 	mail_info={'subject':"%s正在申请验证,验证码：%s" % (name,code),
-		'body':"%s正在申请微信公众号的访问，验证码为：%s\n如是本人操作，请在微信中，将其回复给微信公众号用于验证" % (name,code),
+		'body':"%s正在申请石头脑袋微信账号的访问，验证码为：%s\n如是本人操作，请在微信中，将其回复给石头脑袋微信公众号用于验证" % (name,code),
 			'to_accounts': [mail]
 			}
 	ct=threading.Thread(target=m.sendmail,args=(mail_info,))
@@ -310,7 +357,7 @@ def verifyCode(msg,session):
 	ct=threading.Thread(target=validCodeOK,args=(uinfo,name,mail))
 	ct.start()
 	del session['code'] #这时权限都赋予后，临时的code键值，可以删除掉了
-	return "帐号验证正确，权限正在开通。请使用help命令查看帮助信息"	
+	return "帐号验证正确，权限正在开通，大概半分钟后，自动开通。请使用help命令查看帮助信息"	
 
 	
 #定义处理文本消息的函数
@@ -328,7 +375,12 @@ def echo(msg):
 	print("msg=%s" % uinfo['msg_content'])
 	mylogger.info(f"trying to publish to MQTT: /{cfg.username}/wechat/text")
 	openid=str(msg.source)
-	MyMQTT.PubMsg(topic=f'/{cfg.username}/wechat/text',payload=MyMQTT.pack_data(msgType="text",openid=openid,data=uinfo['msg_content']))
+	txt=uinfo['msg_content']
+	if txt[:3].lower()=='ssh': #要是识别到想发起ssh连接，就先server本地看看可以用的端口，一并用消息给到树莓派那面
+	    port=get_ava_ssh_port(cfg.ssh_start_port,cfg.ssh_end_port)
+	    MyMQTT.PubMsg(topic=f'/{cfg.username}/cmd/ssh',payload=MyMQTT.pack_data(msgType="text",openid=openid,data={'txt':txt,'port':port}))
+	    return
+	MyMQTT.PubMsg(topic=f'/{cfg.username}/wechat/text',payload=MyMQTT.pack_data(msgType="text",openid=openid,data=txt))
 	return ''
 	#return "message=%s,session=%s" % (str(message.source),str(session))
 
@@ -356,17 +408,54 @@ def voice(msg):
 	ct.start()
 	return ''
 
+def send_alert(text=f'{cfg.username}树莓派客户端失联',last_heart=''):
+    mydata={
+        'text':text,
+        'desp':f'{cfg.username}树莓派客户端失联\n当前时间：{ts2time()}\n上次心跳时间:{last_heart}',
+        }
+    #给"虾推啥"发条消息，由它推给微信
+    post_url=f'http://wx.xtuis.cn/{cfg.xia_tui_api_key}.send'
+    requests.post(post_url, data=mydata)
+    for openid in cfg.allow_openid: #给管理员的几个微信用户发送一条消息
+        client.send_text_message(openid,mydata['desp'])
 
+def loopCheckHeartbeat():
+    kv=MyDB.KeyValueStore(cfg.wechat_db)
+    while True:
+        if not 'last_heartbeat' in kv:
+            if cfg.debug:
+                mylogger.info(f"not found last_heartbeat record in wechat_db:{cfg.wechat_db}")
+            time.sleep(cfg.check_heartbeat)
+            continue
+        last_heart=kv['last_heartbeat']
+        if cfg.debug:
+            mylogger.info(f"last_heart={last_heart},cur_ts={time.time()}")
+        if time.time()-last_heart['server_ts'] >cfg.client_timeout:
+            last_heart=ts2time(last_heart['server_ts'])
+            if cfg.debug:
+                mylogger.info(f"heartbeat timeout,last_heart={last_heart}")
+            
+            if not 'send_alert' in kv or time.time()-kv['send_alert'] >3600: #一小时内曾经发过告警，就不发了
+                mylogger.info(f"try to send alert,last_heart={last_heart}")
+                send_alert(last_heart=last_heart)
+                kv['send_alert']=int(time.time()) #每发一次告警，就记录到上次发告警的时间
+        time.sleep(cfg.check_heartbeat)
+    kv.close()
+    
 if __name__=='__main__'	:
-    # 让服务器监听在 0.0.0.0:8001
-    #这个可以和apache/ngix的反向代理配合做域名一致性，否则微信不支持非80/443端口的url绑定
+    # 让服务器监听在 0.0.0.0:8001之类的端口
+    #这个可以和apache的反向代理配合做域名一致性
     mylogger.info("Starting server")
     robot.config['HOST'] = '0.0.0.0'
-    robot.config['PORT'] = 8001
-
+    robot.config['PORT'] = cfg.wechat_port
+    mylogger.info("启动MQTT消息监听线程")
     ct = threading.Thread(target=MyMQTT.SubRespone)
     ct.setDaemon(True)
     ct.start()
+    mylogger.info("启动心跳检查线程")
+    ct2 = threading.Thread(target=loopCheckHeartbeat)
+    ct2.setDaemon(True)
+    ct2.start()
     
     #开发模式下，设置reloader参数，并且环境变量配置BOTTLE_LOCKFILE=/tmp/bottle.lock
     # 每次修改脚本，让它自己重启bottle server

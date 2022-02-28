@@ -6,7 +6,16 @@ from email.mime.multipart import MIMEMultipart
 from email.header import Header
 import smtplib
 from email.utils import parseaddr, formataddr
-import stonehead_config as cfg
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
+
 #发送邮件模块，使用配置好的邮件服务器和账号，进行邮件的发送
 
 mylogger=cfg.logger
@@ -56,7 +65,7 @@ if __name__=='__main__'		:
 	m=mail()
 	mail_info={'subject':'测试邮件标题',
 		'body':'邮件正文部分',
-		'to_accounts': ['123456@qq.com','zhangsan@gmail.com'],
+		'to_accounts': ['43233@qq.com','zsan11343@gmail.com'],
 #		'files':['wechat_msg_debug.log','MyMail.py','wechat.py'],
 		}
 	m.sendmail(mail_info)

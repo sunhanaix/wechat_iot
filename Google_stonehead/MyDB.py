@@ -5,7 +5,16 @@ from hashlib import md5
 import traceback  
 import pypinyin
 import MyLocation
-import stonehead_config as cfg
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
+
 mylogger=cfg.logger
 #sqlite3的用户表和登录日志表数据库维护管理
 
@@ -242,65 +251,69 @@ class UserDB(object):
 			d[col[0]]=row[index]
 		return d				
 
-class KeyValueStore(dict): #新造一个轮子，继承dict类，用于key/value持久化存储在sqlite3中
-	def __init__(self, filename='coords.db'):
-		self.conn = sqlite3.connect(filename)
-		self.conn.execute("CREATE TABLE IF NOT EXISTS kv (key text unique, value text)")
-	
-	def commit(self):
-		self.conn.commit()
+class KeyValueStore(dict):  # 新造一个轮子，继承dict类，用于key/value持久化存储在sqlite3中
+    #为了保留该值原来的str、int、list、dict属性，入库时用json，出库时再转回原来格式，从而保留原来值的类型
+    def __init__(self, filename=cfg.wechat_db):
+        self.conn = sqlite3.connect(filename)
+        self.conn.execute("CREATE TABLE IF NOT EXISTS kv (key text unique, value text)")
 
-	def close(self):
-		self.conn.commit()
-		self.conn.close()
+    def commit(self):
+        self.conn.commit()
 
-	def __len__(self):
-		rows = self.conn.execute('SELECT COUNT(*) FROM kv').fetchone()[0]
-		return rows if rows is not None else 0
+    def close(self):
+        self.conn.commit()
+        self.conn.close()
 
-	def iterkeys(self):
-		c = self.conn.cursor()
-		for row in self.conn.execute('SELECT key FROM kv'):
-			yield row[0]
+    def __len__(self):
+        rows = self.conn.execute('SELECT COUNT(*) FROM kv').fetchone()[0]
+        return rows if rows is not None else 0
 
-	def itervalues(self):
-		c = self.conn.cursor()
-		for row in c.execute('SELECT value FROM kv'):
-			yield row[0]
+    def iterkeys(self):
+        c = self.conn.cursor()
+        for row in self.conn.execute('SELECT key FROM kv'):
+            yield row[0]
 
-	def iteritems(self):
-		c = self.conn.cursor()
-		for row in c.execute('SELECT key, value FROM kv'):
-			yield row[0], row[1]
+    def itervalues(self):
+        c = self.conn.cursor()
+        for row in c.execute('SELECT value FROM kv'):
+            yield json.loads(row[0])
 
-	def keys(self):
-		return list(self.iterkeys())
+    def iteritems(self):
+        c = self.conn.cursor()
+        for row in c.execute('SELECT key, value FROM kv'):
+            yield row[0], json.loads(row[1])
 
-	def values(self):
-		return list(self.itervalues())
+    def keys(self):
+        return list(self.iterkeys())
 
-	def items(self):
-		return list(self.iteritems())
+    def values(self):
+        return list(self.itervalues())
 
-	def __contains__(self, key):
-		return self.conn.execute('SELECT 1 FROM kv WHERE key = ?', (key,)).fetchone() is not None
+    def items(self):
+        return list(self.iteritems())
 
-	def __getitem__(self, key):
-		item = self.conn.execute('SELECT value FROM kv WHERE key = ?', (key,)).fetchone()
-		if item is None:
-			raise KeyError(key)
-		return item[0]
+    def __contains__(self, key):
+        return self.conn.execute('SELECT 1 FROM kv WHERE key = ?', (key,)).fetchone() is not None
 
-	def __setitem__(self, key, value):
-		self.conn.execute('REPLACE INTO kv (key, value) VALUES (?,?)', (key, value))
+    def __getitem__(self, key):
+        item = self.conn.execute('SELECT value FROM kv WHERE key = ?', (key,)).fetchone()
+        if item is None:
+            raise KeyError(key)
+        return json.loads(item[0])
 
-	def __delitem__(self, key):
-		if key not in self:
-			raise KeyError(key)
-		self.conn.execute('DELETE FROM kv WHERE key = ?', (key,))
+    def __setitem__(self, key, value):
+        value=json.dumps(value,indent=2,ensure_ascii=False)
+        self.conn.execute('REPLACE INTO kv (key, value) VALUES (?,?)', (key, value))
+        self.commit()
 
-	def __iter__(self):
-		return self.iterkeys()
+    def __delitem__(self, key):
+        if key not in self:
+            raise KeyError(key)
+        self.conn.execute('DELETE FROM kv WHERE key = ?', (key,))
+        self.commit()
+
+    def __iter__(self):
+        return self.iterkeys()
 		
 if __name__=='__main__':
 	db=UserDB('wechat2.db')
@@ -309,7 +322,7 @@ if __name__=='__main__':
 	#print(res)
 	uinfo=  {
     "tel": "13512345678",
-    "mail": "12345678@qq.com",
+    "mail": "43233@qq.com",
     "department": "摸鱼部",
     "alias": "",
     "mobile": "",

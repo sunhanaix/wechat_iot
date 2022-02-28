@@ -4,7 +4,15 @@ import cgi,cgitb,logging
 import requests
 import hashlib
 import MyDB
-import stonehead_config as cfg
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
 
 def nearBy(addr): #给定当前用户的详细地址，返回这个地址对应的就近库房信息
 	db=MyDB.UserDB(cfg.wechat_db)
@@ -76,7 +84,7 @@ class Location(object):
 		
 
 if __name__=='__main__':
-	a=nearBy('北京市西城区金融大街3号,平安大厦')
+	a=nearBy('北京市顺义区火沙辅线辅路,天洋国际大厦')
 	#print(a)
 	stime=time.time()
 	l=Location(wechat_db='wechat.db',cache_file='coords.db')
