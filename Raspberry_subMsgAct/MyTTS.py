@@ -1,4 +1,5 @@
 import os,sys,re,json,random,time
+import hashlib
 from aip import AipSpeech  #百度语音识别库，用pip install baidu-aip安装
 
 #由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
@@ -33,9 +34,12 @@ def voice_to_word(audio_file):
     return results['result'][0]
 
 def word_to_voice(text): #给定一个文本，用百度api接口，合成语音
+    #audio_file = os.path.join(cfg.voice_dir,f'tts_audio{time.strftime("%Y-%m-%d_%H%M%S", time.localtime())}.mp3')
+    audio_file=os.path.join(cfg.voice_dir,f'{hashlib.md5(text.encode()).hexdigest()}.mp3')
+    if os.path.isfile(audio_file):
+        return audio_file
     result = client.synthesis(text, 'zh', 1, {
         'vol': 15, 'spd': 5, 'per': 3})
-    audio_file = os.path.join(cfg.voice_dir,f'tts_audio{time.strftime("%Y-%m-%d_%H%M%S", time.localtime())}.mp3')
     if not isinstance(result, dict):
         open(audio_file, 'wb').write(result)
         return audio_file
