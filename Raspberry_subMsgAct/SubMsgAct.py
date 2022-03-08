@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 import os,sys,re,json,random
 import time,base64,difflib
 import paho.mqtt.client as mqtt
@@ -58,15 +58,8 @@ print([k for k in miio_config],"\n")
 
 dev=None
 
-def get_broadlink_rm(timeout=3): #找到当前同网段中的broadlink设备
-    devices = broadlink.discover(timeout=timeout)
-    if not devices:
-        return None
-    for device in devices:
-        if isinstance(device, broadlink.rm):
-            break
-    else:
-        raise Exception("Not broadlink rm Pro device found !!")
+def get_broadlink_rm(timeout=60): #找到当前同网段中的broadlink设备
+    device=broadlink.hello(cfg.broadlink_ip)
     device.auth()
     return device
 
@@ -162,7 +155,10 @@ def loopHeartBeat():
     while True:
         ts=int(time.time())
         mylogger.info(f"update heartbeat with server,ts={ts}")
-        PubMsg(topic=f'/{cfg.username}/heartbeat/client', payload=pack_data(msgType="text",data={'openid':'','code':0,'ts':ts}))
+        try:
+            PubMsg(topic=f'/{cfg.username}/heartbeat/client', payload=pack_data(msgType="text",data={'openid':'','code':0,'ts':ts}))
+        except Exception as e:
+            mylogger.error(f"in loopHeartBeat(),reson={e}")
         time.sleep(cfg.heartbeat)
     
 def actWechatVoice(data): 
@@ -499,11 +495,13 @@ class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop
     def __init__(self,broker=cfg.broker,port=cfg.port,user=cfg.username,passwd=cfg.password):
         #client_id = f'mqtt-subscriber-{random.randint(0, 1000)}'
         client_id = f'mqtt-SubMsgAct-sub-{cfg.username}'
+        self.client_id=client_id
         self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.username_pw_set(username=user, password=passwd)
-        self.client.connect(broker, port, 600)  # 600为keepalive的时间间隔
+        #self.client.connect(broker, port, 600)  # 600为keepalive的时间间隔
+        self.client.connect(broker, port, 30)  # 30为keepalive的时间间隔
         self.sub_all()
         self.client.loop_forever()
         mylogger.info("end loop")
@@ -526,7 +524,7 @@ class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop
             self.client.subscribe(topic=f'/{cfg.username}{topic}', qos=0)
 
     def on_connect(self,client, userdata, flags, rc):
-        mylogger.info(f"Connected with result code: {rc},userdata={userdata},flags={flags}")
+        mylogger.info(f"SubMsg Connected with result code: {rc},client_id={self.client_id}")
 
     def on_message(self,client, userdata, msg):
         try:
@@ -543,51 +541,85 @@ class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop
             mylogger.error(e)
             openid=None
         if topic==f'/{cfg.username}/wechat/text':
-            actWechatText(ret)
+            try:
+                actWechatText(ret)
+            except Exception as e:
+                mylogger.error(f"try actWechatText(),reson={e} ")
             return
         if topic==f'/{cfg.username}/wechat/voice':
-            actWechatVoice(ret)
+            try:
+                actWechatVoice(ret)
+            except Exception as e:
+                mylogger.error(f"try actWechatVoice(),reson={e} ")                
             return
         if topic==f'/{cfg.username}/iot/broadlink':
             mylogger.info(f"found msg on /{cfg.username}/iot/broadlink")
-            actBroadlink(ret['data'])
+            try:
+                actBroadlink(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actBroadlink(),reson={e} ")                
             return
         if topic==f'/{cfg.username}/iot/tv':
             mylogger.info(f"found msg on /{cfg.username}/iot/tv")
-            actTV(ret['data'])
+            try:
+                actTV(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actTV(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/iot/miio':
             mylogger.info(f"found msg on /{cfg.username}/iot/miio")
-            actMIIO(ret['data'])
+            try:
+                actMIIO(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actMIIO(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/wechat/askKeywords':
             mylogger.info(f"found msg on /{cfg.username}/wechat/askKeywords")
-            actAskKeywords(ret)
+            try:
+                actAskKeywords(ret)
+            except Exception as e:
+                mylogger.error(f"try actAskKeywords(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/broadcast/text':
             mylogger.info(f"found msg on /{cfg.username}/broadcast/text")
-            actBroadcastText(ret['data'])
+            try:
+                actBroadcastText(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actBroadcastText(),reson={e} ")                                            
             return            
         if topic==f'/{cfg.username}/broadcast/audio':
             mylogger.info(f"found msg on /{cfg.username}/broadcast/audio")
-            actBroadcastAudio(ret['data'])
+            try:
+                actBroadcastAudio(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actBroadcastAudio(),reson={e} ")                                            
             return
         if topic==f'/{cfg.username}/stanley/time':
             mylogger.info(f"found msg on /{cfg.username}/stanley/time")
-            actStanleyTime(ret['data'])
+            try:
+                actStanleyTime(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actStanleyTime(),reson={e} ")                                            
             return                                    
         if topic==f'/{cfg.username}/iot/mp3':
             mylogger.info(f"found msg on /{cfg.username}/iot/mp3")
-            actMp3(ret['data'])
+            try:
+                actMp3(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actMp3(),reson={e} ")                                            
             return                                    
         if topic==f'/{cfg.username}/cmd/ssh':
             mylogger.info(f"found msg on /{cfg.username}/cmd/ssh")
-            actSSH(ret)
+            try:
+                actSSH(ret)
+            except Exception as e:
+                mylogger.error(f"try actSSH(),reson={e} ")                                            
             return               
 class PubMsg(): #publish一个消息到MQTT的一个topic上
     def __init__(self, topic, payload, broker=cfg.broker, port=cfg.port, user=cfg.username, passwd=cfg.password):
         #client_id = f'mqtt-publisher-{random.randint(0, 1000)}'
         client_id = f'mqtt-mqtt-SubMsgAct-pub-{cfg.username}'
+        self.client_id=client_id
         self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -596,7 +628,7 @@ class PubMsg(): #publish一个消息到MQTT的一个topic上
         self.client.publish(topic=topic, payload=payload, qos=0)
 
     def on_connect(self,client, userdata, flags, rc):
-        mylogger.info("Connected with result code: " + str(rc))
+        mylogger.info(f"PubMsg Connected with result code: {rc} ,client_id={self.client_id}")
 
     def on_message(self,client, userdata, msg):
         mylogger.info(msg.topic + " " + str(msg.payload))
