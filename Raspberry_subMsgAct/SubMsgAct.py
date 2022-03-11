@@ -3,15 +3,26 @@ import os,sys,re,json,random
 import time,base64,difflib
 import paho.mqtt.client as mqtt
 import base64,threading
+import psutil,subprocess
 import broadlink
 from broadlink.exceptions import ReadError, StorageError
 import configparser
-import MsgAct_config as cfg
 from ChineseNum2Num import cn2dig
 import requests
 import mymp3
 from MyTTS import voice_to_word,word_to_voice,myplay
 import Alarm
+from netifaces import interfaces, ifaddresses, AF_INET
+
+#由于配置文件，可能是xxx_config.py，为了便于移植，这里动态载入下
+import glob,importlib
+app_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+sys.path.append(app_path)
+cfg_file=glob.glob(f'{app_path}/*config.py')[0]
+cfg_file=os.path.basename(cfg_file)
+cfg_model=os.path.splitext(cfg_file)[0]
+cfg=importlib.import_module(cfg_model)
+
 
 '''
 本程序订阅/wechat/text和/wechat/voice消息,
@@ -47,15 +58,8 @@ print([k for k in miio_config],"\n")
 
 dev=None
 
-def get_broadlink_rm(timeout=3): #找到当前同网段中的broadlink设备
-    devices = broadlink.discover(timeout=timeout)
-    if not devices:
-        return None
-    for device in devices:
-        if isinstance(device, broadlink.rm):
-            break
-    else:
-        raise Exception("Not broadlink rm Pro device found !!")
+def get_broadlink_rm(timeout=60): #找到当前同网段中的broadlink设备
+    device=broadlink.hello(cfg.broadlink_ip)
     device.auth()
     return device
 
@@ -120,7 +124,38 @@ def bestSim(ss): #给定个字符串，在config.py里面的keywords里面，匹
     if max_sim <cfg.accurate: #相似度小于设定值，认为不可信
         return {'k':None,'r':max_sim}
     return {'k':ret,'r':max_sim}
-            
+
+def get_ssh_info(): #获得autossh连接跳板的进程信息，取得其中的第一个，返回如果要连接树莓派ssh，应该访问的地址
+    pids=psutil.pids()
+    for pid in pids:
+        p=psutil.Process(pid)
+        pname=" ".join(p.cmdline())
+        pname=pname.encode('utf8','surrogateescape').decode('utf8')
+        if pname.find(f':localhost:22 {cfg.ssh_user}@{cfg.ssh_host}') >-1:
+            r_side=p.cmdline()[2]
+            port=r_side.split(':')[0]
+            return f"{cfg.ssh_host}:{port}"            
+
+def my_exec(cmd):
+	#远程执行指定命令的接口
+	stdout_org=sys.stdout
+	stderr_org=sys.stderr
+	proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,stdin=subprocess.DEVNULL, shell=True)
+	ret= proc.communicate()
+	res={}
+	res['stdout']=ret[0].decode()
+	res['stderr']=ret[1].decode()
+	sys.stdout=stdout_org
+	sys.stderr=stderr_org	
+	return res
+	
+def get_ip(): #获得当前树莓派的几个接口的ip地址信息
+    res={}
+    for ifaceName in interfaces():
+        addresses = [i['addr']+'/'+i['netmask'] for i in ifaddresses(ifaceName).setdefault(AF_INET, [{'addr':'No IP addr'}] )]
+        res[ifaceName]=addresses
+    return res
+    
 try:
     dev=get_broadlink_rm()
 except Exception as e:
@@ -129,6 +164,15 @@ except Exception as e:
 
 print(dev)
 
+def loopHeartBeat():
+    while True:
+        ts=int(time.time())
+        mylogger.info(f"update heartbeat with server,ts={ts}")
+        try:
+            PubMsg(topic=f'/{cfg.username}/heartbeat/client', payload=pack_data(msgType="text",data={'openid':'','code':0,'ts':ts}))
+        except Exception as e:
+            mylogger.error(f"in loopHeartBeat(),reson={e}")
+        time.sleep(cfg.heartbeat)
     
 def actWechatVoice(data): 
     #处理收到的微信语音信息，调用百度语音识别成文字，然后到关键keywords指令列表里面去匹配到一个最接近的一个指令
@@ -270,6 +314,11 @@ def actWechatText(data):
         Alarm.add_alarm_fr_plain(f"{cron_format_time} {desc}")
         PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':0,'text':f'为您设置{target_time_text}的闹钟'}))
         return        
+    if ss.find('cmd ')>-1:
+        cmd=ss[4:].lstrip().rstrip()
+        data={'openid':openid,'cmd':cmd}
+        actCMD(data)
+        return
     match_keywords=bestSim(ss)
     mylogger.info(f"{sys.argv[0]}: match_keywords={match_keywords}")
     if match_keywords['r'] <cfg.accurate:
@@ -434,15 +483,61 @@ def actMp3(data):
         mymp3.play_xxx_mp3(data['xxx'])
         return
 
+def actSSH(data):
+    #处理收到的MQTT的topic是/cmd/ssh，
+    #发起ssh连接反弹
+    if cfg.debug:
+        mylogger.debug(f"in actSSH(),data={data}")
+    try:
+        openid=data['openid']
+    except Exception as e:
+        mylogger.error(e)
+        openid=None
+    if openid and not openid in cfg.allow_openid:
+        PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':2,'text':'您没有执行ssh反弹端口的权限'}))                
+        return
+    port=data['data']['port']
+    #要是强制启动ssh，或者要是当前ssh没有链接跳板的花，就新建一个
+    if data['data']['txt'].lower().find('force')>-1 or not get_ssh_info():
+        cmd=f'autossh -R {port}:localhost:22 {cfg.ssh_user}@{cfg.ssh_host} -p {cfg.ssh_port} -N -f'
+        mylogger.info(f"try to exec {cmd}")
+        os.system(cmd)
+        PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':0,'text':f'发起了ssh连接跳板机，请ssh连接{cfg.ssh_host}:{port}'}))
+        return
+    else:
+         ssh_info=get_ssh_info() #查看当前ssh连接跳板的情况
+         PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':0,'text':f'已有ssh连接跳板机，请ssh连接{ssh_info}'}))
+         return
+
+def actCMD(data): #执行命令行，把命令结果返回给微信
+    #处理收到的MQTT的topic是/cmd/cmd，
+    #执行命令行命令
+    if cfg.debug:
+        mylogger.debug(f"in actCMD(),data={data}")
+    try:
+        openid=data['openid']
+    except Exception as e:
+        mylogger.error(e)
+        openid=None
+    if openid and not openid in cfg.allow_openid:
+        PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':2,'text':'您没有执行ssh反弹端口的权限'}))                
+        return
+    cmd=data['cmd']
+    res=my_exec(cmd)
+    txt="stdout:\n"+res['stdout']+"\n"+"stderr:\n"+res['stderr']
+    PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':0,'text':f'{cmd}命令执行结果:\n {txt}'}))
+
 class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop等待收到消息
     def __init__(self,broker=cfg.broker,port=cfg.port,user=cfg.username,passwd=cfg.password):
         #client_id = f'mqtt-subscriber-{random.randint(0, 1000)}'
-        client_id = f'mqtt-SubMsgAct-sub'
+        client_id = f'mqtt-SubMsgAct-sub-{cfg.username}'
+        self.client_id=client_id
         self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.username_pw_set(username=user, password=passwd)
-        self.client.connect(broker, port, 600)  # 600为keepalive的时间间隔
+        #self.client.connect(broker, port, 600)  # 600为keepalive的时间间隔
+        self.client.connect(broker, port, 20)  # 30为keepalive的时间间隔
         self.sub_all()
         self.client.loop_forever()
         mylogger.info("end loop")
@@ -458,13 +553,15 @@ class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop
                     '/wechat/voice', #接收公网微信服务器发来的语音信息，做指令解析
                     '/wechat/askKeywords', #接收公网微信服务器发来的查询有哪些关键字请求，结果回给MQTT的/wechat/help的topic
                     '/stanley/time',  #接收放开stanley手机上网管控的时间（分钟为单位）
+                    '/cmd/ssh',  #接收通知树莓派ssh连接服务器的指令
+                    '/cmd/cmd',  #接收通知树莓派执行的命令行命令
                     ]
         for topic in sub_act:
             mylogger.info(f"topic=/{cfg.username}{topic} was subscribed")
             self.client.subscribe(topic=f'/{cfg.username}{topic}', qos=0)
 
     def on_connect(self,client, userdata, flags, rc):
-        mylogger.info(f"Connected with result code: {rc},userdata={userdata},flags={flags}")
+        mylogger.info(f"SubMsg Connected with result code: {rc},client_id={self.client_id}")
 
     def on_message(self,client, userdata, msg):
         try:
@@ -481,47 +578,92 @@ class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop
             mylogger.error(e)
             openid=None
         if topic==f'/{cfg.username}/wechat/text':
-            actWechatText(ret)
+            try:
+                actWechatText(ret)
+            except Exception as e:
+                mylogger.error(f"try actWechatText(),reson={e} ")
             return
         if topic==f'/{cfg.username}/wechat/voice':
-            actWechatVoice(ret)
+            try:
+                actWechatVoice(ret)
+            except Exception as e:
+                mylogger.error(f"try actWechatVoice(),reson={e} ")                
             return
         if topic==f'/{cfg.username}/iot/broadlink':
             mylogger.info(f"found msg on /{cfg.username}/iot/broadlink")
-            actBroadlink(ret['data'])
+            try:
+                actBroadlink(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actBroadlink(),reson={e} ")                
             return
         if topic==f'/{cfg.username}/iot/tv':
             mylogger.info(f"found msg on /{cfg.username}/iot/tv")
-            actTV(ret['data'])
+            try:
+                actTV(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actTV(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/iot/miio':
             mylogger.info(f"found msg on /{cfg.username}/iot/miio")
-            actMIIO(ret['data'])
+            try:
+                actMIIO(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actMIIO(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/wechat/askKeywords':
             mylogger.info(f"found msg on /{cfg.username}/wechat/askKeywords")
-            actAskKeywords(ret)
+            try:
+                actAskKeywords(ret)
+            except Exception as e:
+                mylogger.error(f"try actAskKeywords(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/broadcast/text':
             mylogger.info(f"found msg on /{cfg.username}/broadcast/text")
-            actBroadcastText(ret['data'])
+            try:
+                actBroadcastText(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actBroadcastText(),reson={e} ")                                            
             return            
         if topic==f'/{cfg.username}/broadcast/audio':
             mylogger.info(f"found msg on /{cfg.username}/broadcast/audio")
-            actBroadcastAudio(ret['data'])
+            try:
+                actBroadcastAudio(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actBroadcastAudio(),reson={e} ")                                            
             return
         if topic==f'/{cfg.username}/stanley/time':
             mylogger.info(f"found msg on /{cfg.username}/stanley/time")
-            actStanleyTime(ret['data'])
+            try:
+                actStanleyTime(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actStanleyTime(),reson={e} ")                                            
             return                                    
         if topic==f'/{cfg.username}/iot/mp3':
             mylogger.info(f"found msg on /{cfg.username}/iot/mp3")
-            actMp3(ret['data'])
+            try:
+                actMp3(ret['data'])
+            except Exception as e:
+                mylogger.error(f"try actMp3(),reson={e} ")                                            
             return                                    
+        if topic==f'/{cfg.username}/cmd/ssh':
+            mylogger.info(f"found msg on /{cfg.username}/cmd/ssh")
+            try:
+                actSSH(ret)
+            except Exception as e:
+                mylogger.error(f"try actSSH(),reson={e} ")                                            
+            return               
+        if topic==f'/{cfg.username}/cmd/cmd':
+            mylogger.info(f"found msg on /{cfg.username}/cmd/cmd")
+            try:
+                actCMD(ret)
+            except Exception as e:
+                mylogger.error(f"try actCMD(),reson={e} ")                                            
+            return               
 class PubMsg(): #publish一个消息到MQTT的一个topic上
     def __init__(self, topic, payload, broker=cfg.broker, port=cfg.port, user=cfg.username, passwd=cfg.password):
         #client_id = f'mqtt-publisher-{random.randint(0, 1000)}'
-        client_id = f'mqtt-mqtt-SubMsgAct-pub'
+        client_id = f'mqtt-mqtt-SubMsgAct-pub-{cfg.username}'
+        self.client_id=client_id
         self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -530,10 +672,21 @@ class PubMsg(): #publish一个消息到MQTT的一个topic上
         self.client.publish(topic=topic, payload=payload, qos=0)
 
     def on_connect(self,client, userdata, flags, rc):
-        mylogger.info("Connected with result code: " + str(rc))
+        mylogger.info(f"PubMsg Connected with result code: {rc} ,client_id={self.client_id}")
 
     def on_message(self,client, userdata, msg):
         mylogger.info(msg.topic + " " + str(msg.payload))
+
+def send_alert(text=f'{cfg.username}树莓派已经启动'):
+    mydata={
+        'text':text,
+        'desp':f'{cfg.username}树莓派已启动\n打开时间为{now()}\n地址信息：{json.dumps(get_ip(),indent=2)}',
+        }
+    #给"虾推啥"发条消息，由它推给微信
+    post_url=f'http://wx.xtuis.cn/{cfg.xia_tui_api_key}.send'
+    requests.post(post_url, data=mydata)
+    for openid in cfg.allow_openid: #给管理员的几个微信用户发送一条消息
+        PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':0,'text':mydata['desp']}))
 
 
 if __name__=='__main__':
@@ -542,6 +695,11 @@ if __name__=='__main__':
     ct = threading.Thread(target=Alarm.loop)
     ct.setDaemon(True)
     ct.start()
-
+    mylogger.info("尝试执行loopHeartBeat")
+    ct2=threading.Thread(target=loopHeartBeat)
+    ct2.setDaemon(True)
+    ct2.start()
+    
+    send_alert()
     SubMsg()
     #SubMsg()
