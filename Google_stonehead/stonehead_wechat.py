@@ -140,15 +140,6 @@ def help(openid):
 	content="目前你可以对它说或者敲入文字：\n\n"
 	MyMQTT.PubMsg(topic=f'/{cfg.username}/wechat/askKeywords',payload=MyMQTT.pack_data(msgType="text",openid=openid,data='keywords'))
 	return content
-	keywords=list(cfg.keywords.keys())
-	content+="\n\n".join(keywords)+"\n\n"
-	content+="==========\n\n"
-	content+="播放歌曲\n\n"
-	content+="随便播放30首歌曲\n\n"
-	content+="广播：图图不要玩游戏啦\n\n"
-	content+="xxxxxx（匹配不到前面的关键字时，此语音会喇叭广播出来）\n\n"
-	content+="\n\n"
-	return content
 
 
 def msgNoPriv(msgObj,client,msg=noPrivMsg):
