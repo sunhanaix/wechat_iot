@@ -527,6 +527,12 @@ def actCMD(data): #执行命令行，把命令结果返回给微信
     txt="stdout:\n"+res['stdout']+"\n"+"stderr:\n"+res['stderr']
     PubMsg(topic=f'/{cfg.username}/wechat/response', payload=pack_data(msgType="text", data={'openid':openid,'code':0,'text':f'{cmd}命令执行结果:\n {txt}'}))
 
+def bgRun(func,*kwargs): #把一个程序用线程方式，放后台去运行
+    print(f"in bgRun,func={func},kwargs={kwargs}")
+    ct = threading.Thread(target=func, args=kwargs)
+    ct.setDaemon(True)
+    ct.start()
+    
 class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop等待收到消息
     def __init__(self,broker=cfg.broker,port=cfg.port,user=cfg.username,passwd=cfg.password):
         #client_id = f'mqtt-subscriber-{random.randint(0, 1000)}'
@@ -579,83 +585,83 @@ class SubMsg(): #订阅者模式，初始化订阅哪些topic，然后一直loop
             openid=None
         if topic==f'/{cfg.username}/wechat/text':
             try:
-                actWechatText(ret)
+                bgRun(actWechatText,ret)
             except Exception as e:
                 mylogger.error(f"try actWechatText(),reson={e} ")
             return
         if topic==f'/{cfg.username}/wechat/voice':
             try:
-                actWechatVoice(ret)
+                bgRun(actWechatVoice,ret)
             except Exception as e:
                 mylogger.error(f"try actWechatVoice(),reson={e} ")                
             return
         if topic==f'/{cfg.username}/iot/broadlink':
             mylogger.info(f"found msg on /{cfg.username}/iot/broadlink")
             try:
-                actBroadlink(ret['data'])
+                bgRun(actBroadlink,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actBroadlink(),reson={e} ")                
             return
         if topic==f'/{cfg.username}/iot/tv':
             mylogger.info(f"found msg on /{cfg.username}/iot/tv")
             try:
-                actTV(ret['data'])
+                bgRun(actTV,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actTV(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/iot/miio':
             mylogger.info(f"found msg on /{cfg.username}/iot/miio")
             try:
-                actMIIO(ret['data'])
+                bgRun(actMIIO,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actMIIO(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/wechat/askKeywords':
             mylogger.info(f"found msg on /{cfg.username}/wechat/askKeywords")
             try:
-                actAskKeywords(ret)
+                bgRun(actAskKeywords,ret)
             except Exception as e:
                 mylogger.error(f"try actAskKeywords(),reson={e} ")                                
             return
         if topic==f'/{cfg.username}/broadcast/text':
             mylogger.info(f"found msg on /{cfg.username}/broadcast/text")
             try:
-                actBroadcastText(ret['data'])
+                bgRun(actBroadcastText,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actBroadcastText(),reson={e} ")                                            
             return            
         if topic==f'/{cfg.username}/broadcast/audio':
             mylogger.info(f"found msg on /{cfg.username}/broadcast/audio")
             try:
-                actBroadcastAudio(ret['data'])
+                bgRun(actBroadcastAudio,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actBroadcastAudio(),reson={e} ")                                            
             return
         if topic==f'/{cfg.username}/stanley/time':
             mylogger.info(f"found msg on /{cfg.username}/stanley/time")
             try:
-                actStanleyTime(ret['data'])
+                bgRun(actStanleyTime,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actStanleyTime(),reson={e} ")                                            
             return                                    
         if topic==f'/{cfg.username}/iot/mp3':
             mylogger.info(f"found msg on /{cfg.username}/iot/mp3")
             try:
-                actMp3(ret['data'])
+                bgRun(actMp3,ret['data'])
             except Exception as e:
                 mylogger.error(f"try actMp3(),reson={e} ")                                            
             return                                    
         if topic==f'/{cfg.username}/cmd/ssh':
             mylogger.info(f"found msg on /{cfg.username}/cmd/ssh")
             try:
-                actSSH(ret)
+                bgRun(actSSH,ret)
             except Exception as e:
                 mylogger.error(f"try actSSH(),reson={e} ")                                            
             return               
         if topic==f'/{cfg.username}/cmd/cmd':
             mylogger.info(f"found msg on /{cfg.username}/cmd/cmd")
             try:
-                actCMD(ret)
+                bgRun(actCMD,ret)
             except Exception as e:
                 mylogger.error(f"try actCMD(),reson={e} ")                                            
             return               
