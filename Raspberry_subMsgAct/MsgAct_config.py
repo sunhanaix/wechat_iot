@@ -2,14 +2,15 @@ import os,sys,re,json,random,logging
 
 debug=False
 
-
 broker = 'x.x.x.x' #MQTT服务器地址
 port = 1883
 username='sunbeat' #MQTT用户名
 password='mqtt_password' #MQTT密码
+heartbeat=30  #与公网server互相轮询的间隔秒数，公网处如果超过此时间没有收到这个心跳，则认为client离线了
 
 ssh_user='zsan'  #ssh连接公网机的用户名
 ssh_host='x.x.x.x'  #ssh连接公网跳板机，然后反弹端口
+ssh_port=xxxx
 
 mp3_user='sunbeat'  #自己搭的音乐播放web登录的用户名
 mp3_pass='password' #自己搭的音乐播放web登录的密码
@@ -19,18 +20,20 @@ accurate=0.4 #获得指令与指令列表匹配度，0-1的置信区间，1为�
 deny_stanley='/var/www/html/deny_stanley.py'  #一键禁止小孩手机、pad上网控制脚本路径
 allow_openid=['or_fJ6cvJqrK80PN7MsI8W123456'] #管理员的openid列表，特定的一些操作需要管理员权限；另外，告警通知会发管理员
 broadlink_cfg=r'/var/www/html/broadlink/MyBroadlink.ini'  #博联遥控器学习好了的射频信号和红外信号配置文件
-mitv_cfg='mitv.ini'  #几个小米电视的操作控制配置文件
-miio_cfg='miio.ini'  #几个小米智能设备控制的配置文件
-miio_cmd=r'/home/pi/MiService/micli.py'  #miservice带的操作小米智能设备的命令行程序，github上自行下载
+mitv_cfg=r'/var/www/html/subMsgAct/mitv.ini'  #几个小米电视的操作控制配置文件
+miio_cfg=r'/var/www/html/subMsgAct/miio.ini'  #几个小米智能设备控制的配置文件
+miio_cmd=r'/home/pi/MiService/micli.py'  #miservice带的操作小米智能设备的命令行程序
 mi_user='13512345678'  #小米官网的账号
 mi_pass='mipassword'   #小米官网的密码
 baidu_aip_APP_ID='12345678'  #百度语音识别以及文字转语音的id（需要自己申请）
 baidu_aip_API_KEY = 'SvW84112ylD9V3EX12345678'
 baidu_aip_SECRET_KEY = 'DNt5GsVk3lGxBIN5uyBhzH5F12345678'
 
-xia_tui_api_key='vhyJe0miJGpNjj7zuwf7RRqHp'  #微信关注“虾推啥”公众号，获得的一个访问key。自己的公众号不够用了，都是用测试号测试，但测试号发的信息，被折叠的太多
+xia_tui_api_key='vhyJe0miJGpNjj7zuw123456'  #微信关注“虾推啥”公众号，获得的一个访问key。自己的公众号不够用了，都是用测试号测试，但测试号发的信息，被折叠的太多
 
 audio_dev='hw:0,0' #树莓派下播放音频的设备
+
+broadlink_ip="192.168.31.135" #博联RM设备的ip地址，后面不用discover方式，直接用hello(ip)方式
 
 keywords={
     '打开楼下客厅灯':{'topic':'/iot/broadlink','msg':{'item':'楼下客厅灯','op':'灯'},},
@@ -96,6 +99,8 @@ keywords={
     'x点钟叫我xx':  {'topic': '/iot/alarm', 'msg': {'item': 'minute','op': 'xx'}, }, 
     '每天xx点叫我xx':  {'topic': '/iot/alarm', 'msg': {'item': 'day','op': 'xx'}, },
     '每周x点叫我xx':  {'topic': '/iot/alarm', 'msg': {'item': 'week','op': 'xx'}, },     
+    
+    'ssh [force]':  {'topic': '/cmd/ssh', 'msg': {'item': 'ssh','op': 'start'}, },     
 }
 
 
@@ -112,6 +117,7 @@ image_dir=os.path.join(app_path,'image') #存放图片消息的本地缓存目�
 
 alarm_cfg=os.path.join(app_path,'alarm.cfg') #闹钟的配置文件
 alarm_mp3=os.path.join(app_path,'alarm.mp3') #闹钟的铃声文件
+
 
 #定log输出格式，配置同时输出到标准输出与log文件
 logger = logging.getLogger('mylogger')
