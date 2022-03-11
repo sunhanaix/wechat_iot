@@ -9,19 +9,24 @@ WechatAppSecret='f04b29ee7ef5242f9928194baa123456'
 WechatToken='wechatTokenPassword'
 WechatEncodingAESKey='AhWkQssrZflDg8ARx9WMKXBdaMxOCteW12345678'
 
-ssh_start_port=45001  #远程ssh反弹使用的起始端口
-ssh_end_port=45999 #远程ssh反弹使用的结束端口
+ssh_start_port=45001    #远程ssh反弹使用的起始端口
+ssh_end_port=45999  #远程ssh反弹使用的结束端口
 
 broker = 'localhost' #MQTT服务器地址
-port = 1883  #MQTT服务器的端口，要确保防火墙上放开了这个端口，可以访问
+mqtt_port = 1883  
 username='sunbeat' #MQTT用户名
 password='mypassword' #MQTT密码
 client_timeout=60 #如果client有60s还没有心跳过来，则认为离线了
 check_heartbeat=30 #每30s检查一次上次心跳时间
 
 baidu_ak='IPHDEesBVxQaVxbH1G6SWwok12345678' #百度用ip查地址，用gps查地址的api接口ak（自己申请）
-
 wechat_db='stonehead.db'  #存放微信关注用户等信息的sqlite3数据库
+
+reply_max_len=2048 #返回给微信用户的消息时，最长只返回前2048个字节
+
+xia_tui_api_key='vhyJe0miJGpNjj7zuw123456'  #微信关注“虾推啥”公众号，获得的一个访问key。自己的公众号不够用了，都是用测试号测试，但测试号发的信息，被折叠的太多
+
+allow_openid=['or_fJ6cvJqrK80PN7Ms1234456']
 
 mail_params={
     'smtp_server':'smtp.qq.com',  #用于发送邮件的smtp服务器
